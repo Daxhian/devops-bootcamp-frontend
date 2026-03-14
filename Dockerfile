@@ -9,7 +9,7 @@ FROM base AS deps
 
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --ignore-scripts --prefer-offline && \
+    npm ci --prefer-offline && \
     npm cache clean --force
 
 # ── Stage 3: Builder ──
