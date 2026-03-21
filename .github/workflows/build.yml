@@ -39,7 +39,7 @@ jobs:
       - name: Slack Notification    # We use a pre-built action to send a notification to Slack when the pipeline starts. Go to GitHub Marketplace to find more actions for different purposes.
         uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_TOKEN: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
           SLACK_TITLE: Docker build pipeline triggered
           SLACK_MESSAGE: "Pipeline started for repository: ${{ github.repository }}, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Commit message: ${{ github.event.head_commit.message }}"
           SLACK_COLOR: ${{ job.status }}
@@ -98,7 +98,7 @@ jobs:
         
       - name: Upload scan report as artifact # We can also upload the scan report as an artifact to be downloaded later, this is useful for keeping a record of the scan results
         if: always() # We use "if: always()" to make sure that this step runs even if the previous step (scan) fails, this way we can still get the scan report even if there are vulnerabilities found in the image
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-scan-report 
           path: trivy-report.txt # This is the path to the scan report generated in the previous step (the root of the repository in this case)
@@ -115,7 +115,7 @@ jobs:
       - name: Slack Notification    # Final Slack notification to notify that the pipeline has ended.
         uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_TOKEN: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
           SLACK_COLOR: ${{ job.status }}
           SLACK_TITLE: Docker build, scan and push pipeline successful
           SLACK_MESSAGE: "Pipeline ended for repository, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Job status: ${{ job.status }}"
