@@ -15,7 +15,7 @@ name: Docker Build, Scan and Push
 on:   
   push:
     branches: ["main"]
-  path_ignore:
+    paths-ignore:
     - ".githubworkflows/**"
     - "**/*.md"
 
