@@ -37,15 +37,12 @@ jobs:
     runs-on: ubuntu-latest    # We specify the type of server we want to run our job on, in this case we choose the latest version of Ubuntu, but you can also choose other types of servers like Windows or MacOS depending on your needs.
     steps:    
       - name: Slack Notification    # We use a pre-built action to send a notification to Slack when the pipeline starts. Go to GitHub Marketplace to find more actions for different purposes.
-        uses: bryannice/gitactions-slack-notification@2.0.0
+        uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_TOKEN: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
           SLACK_TITLE: Docker build pipeline triggered
           SLACK_MESSAGE: "Pipeline started for repository: ${{ github.repository }}, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Commit message: ${{ github.event.head_commit.message }}"
-          GITHUB_ACTOR: ${GITHUB_ACTOR}
-          GITHUB_ACTION: ${GITHUB_ACTION}
-          GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}
-          GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}
+          SLACK_COLOR: ${{ job.status }}
   
   build-scan-and-push:   # Build, scan and push Docker image
     runs-on: ubuntu-latest
@@ -116,14 +113,10 @@ jobs:
           tags: ${{ steps.tag.outputs.tags }} # We use the tags generated in the previous step to tag the image and also to push it to Docker Hub
 
       - name: Slack Notification    # Final Slack notification to notify that the pipeline has ended.
-        uses: bryannice/gitactions-slack-notification@2.0.0
+        uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_TOKEN: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_COLOR: ${{ job.status }}
           SLACK_TITLE: Docker build, scan and push pipeline successful
           SLACK_MESSAGE: "Pipeline ended for repository, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Job status: ${{ job.status }}"
-          GITHUB_ACTOR: ${GITHUB_ACTOR}
-          GITHUB_ACTION: ${GITHUB_ACTION}
-          GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}
-          GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}            
-
         
