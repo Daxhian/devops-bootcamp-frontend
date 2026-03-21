@@ -1,0 +1,129 @@
+#-----------------------------------------------------------------------------
+# GitHub Actions Workflow for Building, Scanning and Pushing Docker Image 
+#-----------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------
+# This is the name of the pipeline, you can choose any name you like
+#-----------------------------------------------------------------------------
+name: Docker Build, Scan and Push  
+
+
+#-----------------------------------------------------------------------------
+# This section defines the events that will trigger the pipeline, in this case we want to trigger the pipeline on every push to the main branch, but we want to ignore any changes made to the workflow files and markdown files to avoid unnecessary pipeline runs.
+#-----------------------------------------------------------------------------
+on:   
+  push:
+    branches: ["main"]
+  path_ignore:
+    - ".github/workflows/**"
+    - "**/*.md"
+
+
+#-----------------------------------------------------------------------------
+# This section defines the environment variables that will be used in the pipeline, in this case we define the Docker Hub repository and image name as global variables to be used in multiple steps of the pipeline, we also define the API URL as a build argument to be passed to the Dockerfile when building the image.
+#-----------------------------------------------------------------------------
+env:
+  DOCKER_REPO: daxhian
+  IMAGE_NAME: devops-bootcamp-frontend
+  NEXT_PUBLIC_API_URL: https://localhost:3000
+
+
+#-----------------------------------------------------------------------------
+# This section defines the jobs that will run in the pipeline, in this case we have two jobs, the first one is to notify Slack that the pipeline has started and the second one is to build, scan and push the Docker image. We can have multiple jobs in a pipeline and they can run sequentially or in parallel depending on our needs.
+#-----------------------------------------------------------------------------
+jobs:   
+  notify-start:   # Notify Slack that pipeline has started
+    runs-on: ubuntu-latest    # We specify the type of server we want to run our job on, in this case we choose the latest version of Ubuntu, but you can also choose other types of servers like Windows or MacOS depending on your needs.
+    steps:    
+      - name: Slack Notification    # We use a pre-built action to send a notification to Slack when the pipeline starts. Go to GitHub Marketplace to find more actions for different purposes.
+        uses: bryannice/gitactions-slack-notification@2.0.0
+        env:
+          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_TITLE: Docker build pipeline triggered
+          SLACK_MESSAGE: "Pipeline started for repository: ${{ github.repository }}, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Commit message: ${{ github.event.head_commit.message }}"
+          GITHUB_ACTOR: ${GITHUB_ACTOR}
+          GITHUB_ACTION: ${GITHUB_ACTION}
+          GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}
+          GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}
+  
+  build-scan-and-push:   # Build, scan and push Docker image
+    runs-on: ubuntu-latest
+    permissions:    # We need to give permissions to the server to read and write the docker file and build  the image
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout application code   # We first need to clone the application code (repository) into the server to build the image
+        uses: actions/checkout@v6
+
+      - name: Set up Docker   # We need to setup Docker in the server to build the image
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log into Docker Hub   # We need to login to Docker Hub to push the image after building it
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKER_REPO }}  # Here we use the global variable we defined at the beginning of the file
+          password: ${{ secrets.DOCKER_TOKEN }}   # We use GitHub secrets to store sensitive information like Docker Hub token
+      
+      - name: Generate Image Tag    # We should should tag the image before building it, this will help us to identify the image later and also to push it to Docker Hub with the correct tag
+        id: tag # We give an id to this step so that we can use the output of this step in the next step to tag the image
+        uses: docker/metadata-action@v6   # We generate a unique tag for the image using the "Docker Metadata Action" from Github marketplace.
+        with:
+          images: docker.io/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}
+          tags: | # This will use the short form of your Github commit id to tag the image, you can also use other formats like branch name or tag name
+            type=sha, format=short 
+     
+      - name: Build docker image     # Now we can build the image using the "Docker Build Action" from Github marketplace, we will use the tags generated in the previous step to tag the image and also to push it to Docker Hub
+        uses: docker/build-push-action@v4
+        with:
+          context: . # The context is the directory where the Dockerfile is located, in this case it's the root of the repository
+          load: true # This will load the built image into the Docker cache, this is useful for scanning the image in the next step without pushing it to Docker Hub first
+          tags: ${{ steps.tag.outputs.tags }} # We use the tags generated in the previous step to tag the image
+          build-args: | # We can also pass build arguments to the Dockerfile, in this case we pass the API URL as a build argument to be used in the Dockerfile
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
+
+      - name: Install Trivy # We need to install Trivy in the server to scan the image for vulnerabilities
+        run: | # We use "run" to initiate commands in the terminal of the server.
+          sudo apt-get update
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.69.3 
+          
+      - name: Scan docker image for vulnerabilities   # We use the "Trivy Action" from Github marketplace to scan the built image for vulnerabilities, we will use the same tags generated in the previous step to scan the correct image
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ steps.tag.outputs.tags }} # We use the tags generated in the previous step to scan the correct image
+          ########## image-ref: 'docker.io/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          output: 'trivy-report.txt' # We save the scan report in a text file to be uploaded as an artifact in the next step
+        
+      - name: Upload scan report as artifact # We can also upload the scan report as an artifact to be downloaded later, this is useful for keeping a record of the scan results
+        if: always() # We use "if: always()" to make sure that this step runs even if the previous step (scan) fails, this way we can still get the scan report even if there are vulnerabilities found in the image
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-scan-report 
+          path: trivy-report.txt # This is the path to the scan report generated in the previous step (the root of the repository in this case)
+
+      - name: Push docker image to Docker Hub
+        if: success() # We use "if: success()" to make sure that this step only runs if the previous steps (build and scan) are successful, 
+        # this way we only push the image if there are no vulnerabilities found in the scan
+        uses: docker/build-push-action@v7
+        with:
+          context: . # The context is the directory where the Dockerfile is located, in this case it's the root of the repository
+          push: true # This will push the image to Docker Hub after building it
+          tags: ${{ steps.tag.outputs.tags }} # We use the tags generated in the previous step to tag the image and also to push it to Docker Hub
+
+      - name: Slack Notification    # Final Slack notification to notify that the pipeline has ended.
+        uses: bryannice/gitactions-slack-notification@2.0.0
+        env:
+          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_TITLE: Docker build, scan and push pipeline successful
+          SLACK_MESSAGE: "Pipeline ended for repository, on branch: ${{ github.ref }}, by user: ${{ github.actor }}, Job status: ${{ job.status }}"
+          GITHUB_ACTOR: ${GITHUB_ACTOR}
+          GITHUB_ACTION: ${GITHUB_ACTION}
+          GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}
+          GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}            
+
+        
