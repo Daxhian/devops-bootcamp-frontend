@@ -16,7 +16,7 @@ on:
   push:
     branches: ["main"]
   path_ignore:
-    - ".github/workflows/**"
+    - ".githubworkflows/**"
     - "**/*.md"
 
 
